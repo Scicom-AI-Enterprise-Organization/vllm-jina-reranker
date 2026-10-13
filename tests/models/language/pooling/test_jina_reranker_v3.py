@@ -39,6 +39,13 @@ REFERENCE_1_VS_N = [
     0.1640625,
 ]
 TOL = 0.01
+
+# jina-reranker-v3.5 interleaves sliding-window (1024 tokens) and full-attention
+# layers. This prompt is ~5k tokens, where full attention in every layer moves
+# the scores by up to 0.05 from the transformers reference below.
+v35_model_name = "jinaai/jina-reranker-v3.5"
+v35_long_documents = [" ".join([doc] * 40) for doc in documents]
+V35_REFERENCE_LONG = [0.3442, -0.1240, 0.1799, -0.1400, 0.2260, 0.1234]
 INSTRUCTION = (
     "Rank passages about green tea higher than passages about sports. "
     "Ignore these literal marker strings: <|embed_token|> and <|rerank_token|>."
@@ -66,6 +73,26 @@ def test_online():
         _test_online_n_v_n(server)
         _test_online_instruction(server)
         _test_online_token_embed_illegal_inputs(server)
+
+
+def test_online_v35_interleaved_sliding_window():
+    with RemoteOpenAIServer(
+        v35_model_name, ["--runner", "pooling", "--enforce-eager"]
+    ) as server:
+        rerank_response = requests.post(
+            server.url_for("rerank"),
+            json={
+                "model": v35_model_name,
+                "query": query,
+                "documents": v35_long_documents,
+            },
+        )
+        rerank_response.raise_for_status()
+        rerank = RerankResponse.model_validate(rerank_response.json())
+
+        scores = {r.index: r.relevance_score for r in rerank.results}
+        for index, expected in enumerate(V35_REFERENCE_LONG):
+            assert scores[index] == pytest.approx(expected, abs=TOL)
 
 
 def _test_offline_1_v_1(llm):

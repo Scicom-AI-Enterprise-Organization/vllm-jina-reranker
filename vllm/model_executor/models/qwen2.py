@@ -25,6 +25,7 @@
 # limitations under the License.
 """Inference-only Qwen2 model compatible with HuggingFace weights."""
 
+import inspect
 from collections.abc import Iterable
 from itertools import islice
 from typing import Any
@@ -346,16 +347,32 @@ class Qwen2Model(nn.Module, EagleModelMixin):
         cache_config = vllm_config.cache_config
         quant_config = vllm_config.quant_config
 
-        # TODO (@robertgshaw2): see if this can be moved out
-        if len(set(getattr(config, "layer_types", []))) > 1:
-            assert config.max_window_layers == config.num_hidden_layers, (
-                "Sliding window for some but all layers is not supported. "
-                "This model uses sliding window but `max_window_layers` = {} "
-                "is less than `num_hidden_layers` = {}. Please open an issue "
-                "to discuss this feature.".format(
-                    config.max_window_layers,
-                    config.num_hidden_layers,
-                )
+        # Models that interleave sliding-window and full-attention layers list the
+        # kind of each layer in `layer_types` (e.g. jinaai/jina-reranker-v3.5).
+        layer_types = getattr(config, "layer_types", None) or []
+        interleaved = len(set(layer_types)) > 1
+        if interleaved and (
+            "per_layer_sliding_window"
+            not in inspect.signature(decoder_layer_type).parameters
+        ):
+            raise ValueError(
+                f"{decoder_layer_type.__name__} does not support interleaved "
+                "sliding-window and full-attention layers (`layer_types`)."
+            )
+
+        def make_layer(prefix: str) -> nn.Module:
+            kwargs = {}
+            if (
+                interleaved
+                and layer_types[extract_layer_index(prefix)] == "sliding_attention"
+            ):
+                kwargs["per_layer_sliding_window"] = config.sliding_window
+            return decoder_layer_type(
+                config=config,
+                cache_config=cache_config,
+                quant_config=quant_config,
+                prefix=prefix,
+                **kwargs,
             )
 
         self.config = config
@@ -378,12 +395,7 @@ class Qwen2Model(nn.Module, EagleModelMixin):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: decoder_layer_type(
-                config=config,
-                cache_config=cache_config,
-                quant_config=quant_config,
-                prefix=prefix,
-            ),
+            make_layer,
             prefix=f"{prefix}.layers",
         )
 
