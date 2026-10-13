@@ -75,7 +75,7 @@ If your model is not in the above list, we will try to automatically convert the
 
 | Architecture | Models | Example HF Models | [LoRA](../../features/lora.md) | [PP](../../serving/parallelism_scaling.md) |
 | ------------ | ------ | ----------------- | -------------------- | ------------------------- |
-| `JinaForRanking` | Qwen3-based | `jinaai/jina-reranker-v3` | | |
+| `JinaForRanking` | Qwen3-based | `jinaai/jina-reranker-v3`, `jinaai/jina-reranker-v3.5` | | |
 
 jina-reranker-v3 is a listwise document reranker model with a novel `last but not late interaction` architecture. More information can be found at: [examples/pooling/token_embed/jina_reranker_v3_offline.py](../../../examples/pooling/token_embed/jina_reranker_v3_offline.py)
 
